@@ -26,31 +26,31 @@ resource "aws_vpc" "basic_vpc" {
   tags = local.tags
 }
 
-resource "aws_network_acl" "public" {
-  vpc_id = aws_vpc.basic_vpc.id
-}
+# resource "aws_network_acl" "public" {
+#   vpc_id = aws_vpc.basic_vpc.id
+# }
 
-resource "aws_network_acl_rule" "inbound_icmp" {
-  network_acl_id = aws_network_acl.public.id
-  rule_number    = 100
-  egress         = false
-  protocol       = "icmp"
-  rule_action    = "allow"
-  cidr_block     = "0.0.0.0/0"
-  from_port      = -1  # All types
-  to_port        = -1
-}
+# resource "aws_network_acl_rule" "inbound_icmp" {
+#   network_acl_id = aws_network_acl.public.id
+#   rule_number    = 100
+#   egress         = false
+#   protocol       = "icmp"
+#   rule_action    = "allow"
+#   cidr_block     = "0.0.0.0/0"
+#   from_port      = -1  # All types
+#   to_port        = -1
+# }
 
-resource "aws_network_acl_rule" "outbound_icmp" {
-  network_acl_id = aws_network_acl.public.id
-  rule_number    = 100
-  egress         = true
-  protocol       = "icmp"
-  rule_action    = "allow"
-  cidr_block     = "0.0.0.0/0"
-  from_port      = -1  # All types
-  to_port        = -1
-}
+# resource "aws_network_acl_rule" "outbound_icmp" {
+#   network_acl_id = aws_network_acl.public.id
+#   rule_number    = 100
+#   egress         = true
+#   protocol       = "icmp"
+#   rule_action    = "allow"
+#   cidr_block     = "0.0.0.0/0"
+#   from_port      = -1  # All types
+#   to_port        = -1
+# }
 
 resource "aws_subnet" "public_subnet" {
   vpc_id = aws_vpc.basic_vpc.id
@@ -91,23 +91,25 @@ resource "aws_security_group" "allow_ssh_basic_instance" {
   vpc_id = aws_vpc.basic_vpc.id
 
   ingress {
-    protocol = "tcp"
-    from_port = 22
-    to_port = 22
+    description = "SSH from anywhere"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
-    protocol = "icmp"
-    from_port = 0
-    to_port = 0
+    description = "Ping from anywhere"
+    protocol    = "icmp"
+    from_port   = -1
+    to_port     = -1
     cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
+    protocol    = "-1"
     from_port   = 0
     to_port     = 0
-    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
@@ -150,7 +152,7 @@ resource "aws_instance" "basic_instance" {
   instance_type = "t2.micro"
   subnet_id = aws_subnet.public_subnet.id
   associate_public_ip_address = true
-  security_groups = [ aws_security_group.allow_ssh_basic_instance.id ]
+  vpc_security_group_ids = [ aws_security_group.allow_ssh_basic_instance.id ]
   key_name = module.key_pair.key_pair_name
 
   tags = local.tags
