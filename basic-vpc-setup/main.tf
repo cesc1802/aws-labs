@@ -26,32 +26,6 @@ resource "aws_vpc" "basic_vpc" {
   tags = local.tags
 }
 
-# resource "aws_network_acl" "public" {
-#   vpc_id = aws_vpc.basic_vpc.id
-# }
-
-# resource "aws_network_acl_rule" "inbound_icmp" {
-#   network_acl_id = aws_network_acl.public.id
-#   rule_number    = 100
-#   egress         = false
-#   protocol       = "icmp"
-#   rule_action    = "allow"
-#   cidr_block     = "0.0.0.0/0"
-#   from_port      = -1  # All types
-#   to_port        = -1
-# }
-
-# resource "aws_network_acl_rule" "outbound_icmp" {
-#   network_acl_id = aws_network_acl.public.id
-#   rule_number    = 100
-#   egress         = true
-#   protocol       = "icmp"
-#   rule_action    = "allow"
-#   cidr_block     = "0.0.0.0/0"
-#   from_port      = -1  # All types
-#   to_port        = -1
-# }
-
 resource "aws_subnet" "public_subnet" {
   vpc_id = aws_vpc.basic_vpc.id
   cidr_block = "10.0.1.0/24"
@@ -64,29 +38,76 @@ resource "aws_subnet" "private_subnet" {
   tags = local.tags
 }
 
+resource "aws_subnet" "public_subnet_2" {
+  vpc_id = aws_vpc.basic_vpc.id
+  cidr_block = "10.0.3.0/24"
+  availability_zone = "ap-southeast-1a"
+  tags = local.tags
+}
+
+resource "aws_subnet" "private_subnet_2" {
+  vpc_id = aws_vpc.basic_vpc.id
+  cidr_block = "10.0.4.0/24"
+  availability_zone = "ap-southeast-1b"
+  tags = local.tags
+}
+
+resource "aws_eip" "ngw" {
+  domain = "vpc"
+  tags   = local.tags
+}
+
+resource "aws_nat_gateway" "ngw" {
+  allocation_id = aws_eip.ngw.id
+  subnet_id     = aws_subnet.public_subnet.id
+  tags          = local.tags
+
+  depends_on = [aws_internet_gateway.igw]
+}
+
 resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.basic_vpc.id
-  tags = local.tags
+  tags   = local.tags
 }
 
 resource "aws_route_table" "public_route_table" {
   vpc_id = aws_vpc.basic_vpc.id
-  tags = local.tags
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.igw.id
+  }
+
+  tags = merge(local.tags, {
+    Name = "public-rtb"
+  })
 }
 
-resource "aws_route" "public_route" {
+resource "aws_route_table" "private_route_table" {
+  vpc_id = aws_vpc.basic_vpc.id
+
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.ngw.id
+  }
+
+  tags = merge(local.tags, {
+    Name = "private-rtb"
+  })
+}
+
+resource "aws_route_table_association" "public_a" {
+  subnet_id      = aws_subnet.public_subnet.id
   route_table_id = aws_route_table.public_route_table.id
-  destination_cidr_block = "0.0.0.0/0"
-  gateway_id = aws_internet_gateway.igw.id
 }
 
-resource "aws_route_table_association" "public_route_table_association" {
-  subnet_id = aws_subnet.public_subnet.id
-  route_table_id = aws_route_table.public_route_table.id
+resource "aws_route_table_association" "private_a" {
+  subnet_id      = aws_subnet.private_subnet.id
+  route_table_id = aws_route_table.private_route_table.id
 }
 
-resource "aws_security_group" "allow_ssh_basic_instance" {
-  name = "basic-vpc-sg"
+resource "aws_security_group" "public_sg" {
+  name = "public-sg"
   description = "Basic VPC Security Group"
   vpc_id = aws_vpc.basic_vpc.id
 
@@ -114,22 +135,6 @@ resource "aws_security_group" "allow_ssh_basic_instance" {
   }
 }
 
-# resource "aws_vpc_security_group_ingress_rule" "allow_ssh" {
-#   security_group_id = aws_security_group.allow_ssh_basic_instance.id
-#   ip_protocol = "tcp"
-#   from_port = 22
-#   to_port = 22
-#   cidr_ipv4 = "0.0.0.0/0"
-# }
-
-# resource "aws_vpc_security_group_ingress_rule" "allow_icmp" {
-#   security_group_id = aws_security_group.allow_ssh_basic_instance.id
-#   ip_protocol = "icmp"
-#   from_port = 0
-#   to_port = 0
-#   cidr_ipv4 = "0.0.0.0/0"
-# }
-
 
 # Get latest Ubuntu 22.04 LTS AMI
 data "aws_ami" "ubuntu" {
@@ -147,13 +152,24 @@ data "aws_ami" "ubuntu" {
   }
 }
 
-resource "aws_instance" "basic_instance" {
-  ami = data.aws_ami.ubuntu.id
-  instance_type = "t2.micro"
-  subnet_id = aws_subnet.public_subnet.id
+resource "aws_instance" "public_instance" {
+  ami                         = data.aws_ami.ubuntu.id
+  instance_type               = "t2.micro"
+  subnet_id                   = aws_subnet.public_subnet.id
   associate_public_ip_address = true
-  vpc_security_group_ids = [ aws_security_group.allow_ssh_basic_instance.id ]
-  key_name = module.key_pair.key_pair_name
+  vpc_security_group_ids      = [aws_security_group.public_sg.id]
+  key_name                    = module.key_pair.key_pair_name
+
+  tags = merge(local.tags, {
+    Name = "public-instance"
+  })
+}
+
+resource "aws_instance" "private_instance" {
+  ami                         = data.aws_ami.ubuntu.id
+  instance_type               = "t2.micro"
+  subnet_id                   = aws_subnet.private_subnet_2.id
+  key_name                    = module.key_pair.key_pair_name
 
   tags = local.tags
 }
